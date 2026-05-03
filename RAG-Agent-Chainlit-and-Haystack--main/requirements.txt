@@ -1,0 +1,10 @@
+chainlit
+haystack-ai
+sentence-transformers
+langfuse
+openai
+pydantic
+pydantic-settings
+structlog
+tiktoken
+docling
