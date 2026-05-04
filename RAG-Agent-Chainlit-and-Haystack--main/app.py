@@ -109,18 +109,19 @@ async def on_chat_start() -> None:
 
     await cl.Message(
         content=(
-            "# 📄 PDF Grounded Q&A Agent\n\n"
-            "Welcome! I answer questions **strictly** from PDF documents with page citations.\n\n"
-            "**How to use:**\n"
-            "1. Upload a PDF below\n"
-            "2. Wait for processing\n"
-            "3. Ask questions about the document\n\n"
-            "**Features:**\n"
-            "• ✅ Strict grounding — only answers from the document\n"
-            "• 📑 Page-level citations\n"
-            "• 🚫 Honest refusals for out-of-scope questions\n"
-            "• 🌍 Multilingual support\n\n"
-            "👇 **Upload a PDF to get started!**"
+            "```\n"
+            "=== DEEPSEEK DOCUMENT INTELLIGENCE SYSTEM ===\n"
+            "STATUS: ONLINE\n"
+            "ENGINE: DEEPSEEK V4\n"
+            "=============================================\n"
+            "```\n"
+            "**Welcome to the Terminal!**\n\n"
+            "Please upload a PDF document. Once uploaded, I will:\n"
+            "1. 📥 Ingest and run Optical Character Recognition (OCR)\n"
+            "2. 🔪 Perform semantic document chunking\n"
+            "3. 🧬 Generate multi-dimensional vector embeddings\n"
+            "4. 🗃️ Index into the local vector database\n\n"
+            "> Waiting for file input..."
         )
     ).send()
 
@@ -217,16 +218,27 @@ async def on_message(message: cl.Message) -> None:
 
 async def _process_uploaded_pdf(file: cl.File) -> None:
     """Process an uploaded PDF file."""
-    status_msg = cl.Message(content="📥 **Processing PDF...**\n\nParsing document...")
-    await status_msg.send()
-
     try:
         pdf_path = Path(file.path)
+        
+        # New UI approach: using Chainlit TaskList (simplified)
+        task_list = cl.TaskList()
+        task_list.status = "System Initializing..."
+        await task_list.send()
+        
+        task_ingest = cl.Task(title="⚙️ Running Full Ingestion Pipeline", status=cl.TaskStatus.RUNNING)
+        await task_list.add_task(task_ingest)
+        
+        task_list.status = "Processing Document (Parsing, Chunking, Embedding)..."
+        await task_list.update()
 
-        status_msg.content = "📥 **Processing PDF...**\n\n⏳ Parsing structure..."
-        await status_msg.update()
-
+        # Simple monolithic call, no callbacks
         parsed = await cl.make_async(_ingestion_pipeline.ingest)(pdf_path)
+
+        # Mark task as done
+        task_ingest.status = cl.TaskStatus.DONE
+        task_list.status = "Processing Complete!"
+        await task_list.update()
 
         # Set up document context for refusal handler
         sample_results = _retriever.retrieve_with_scores(
@@ -234,17 +246,19 @@ async def _process_uploaded_pdf(file: cl.File) -> None:
         )
         _refusal_handler.set_document_context(sample_results)
 
-        status_msg.content = (
-            f"✅ **Document loaded!**\n\n"
-            f"📄 **File:** {parsed.filename}\n"
-            f"📑 **Pages:** {parsed.total_pages}\n"
-            f"🧩 **Chunks:** {len(parsed.chunks)} indexed\n"
-            f"🌐 **Language:** {parsed.language}\n"
-            f"⚙️ **Parser:** {parsed.parser_used}\n\n"
-            f"**Ask me anything about this document!**"
-        )
-        await status_msg.update()
+        await cl.Message(
+            content=(
+                "### 🟢 System Ready\n\n"
+                f"- **Filename:** `{parsed.filename}`\n"
+                f"- **Length:** `{parsed.total_pages} pages`\n"
+                f"- **Memory Chunks:** `{len(parsed.chunks)}`\n"
+                "---\n"
+                "*System is online. What would you like to know?*"
+            )
+        ).send()
 
     except Exception as e:
-        status_msg.content = f"❌ **Failed:** `{str(e)}`"
-        await status_msg.update()
+        if 'task_list' in locals():
+            task_list.status = "Fatal Error!"
+            await task_list.update()
+        await cl.Message(content=f"❌ **System Failure:** `{str(e)}`").send()
